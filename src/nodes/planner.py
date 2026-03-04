@@ -1,23 +1,33 @@
+"""
+nodes/planner.py — with Human-in-the-Loop interrupt()
+
+Flow:
+  1. GPT-4o generates queries
+  2. interrupt() pauses the graph and surfaces queries to the caller
+  3. Caller can approve as-is OR pass back edited queries
+  4. Graph resumes from this exact point — no re-planning needed
+
+The interrupt value is whatever you pass to graph.invoke() or
+graph.resume() as the second argument after the pause.
+"""
+
 import os
 import json
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import SystemMessage, HumanMessage
+from langgraph.types import interrupt          # ← LangGraph 1.x
 from src.state import AgentState
 
 load_dotenv()
 
-# ── Model init ───────────────────────────────────────────────────
-# init_chat_model is the LangChain 1.x preferred pattern.
-# Swap provider string to switch between OpenAI / Anthropic / etc.
 planner_llm = init_chat_model(
     model="gpt-4o",
     model_provider="openai",
-    temperature=0.2,       # low temp = consistent structured output
+    temperature=0.2,
     api_key=os.getenv("OPENAI_API_KEY"),
 )
 
-# ── Prompt ───────────────────────────────────────────────────────
 PLANNER_SYSTEM = """You are a research planning expert for a competitive intelligence system.
 
 Your ONLY job is to break a research topic into highly targeted search queries.
@@ -48,7 +58,7 @@ def planner_node(state: AgentState) -> dict:
     print(f"\n[PLANNER] 📋 Topic: {state['topic']}")
     print(f"  Source mode : {state['source_mode']}")
 
-    # Build the prompt
+    # ── Step 1: Generate queries with GPT-4o ─────────────────────
     messages = [
         SystemMessage(content=PLANNER_SYSTEM),
         HumanMessage(content=PLANNER_HUMAN.format(
@@ -58,32 +68,61 @@ def planner_node(state: AgentState) -> dict:
         ))
     ]
 
-    # Call GPT-4o
     response = planner_llm.invoke(messages)
     raw = response.content.strip()
-
-    # Parse JSON response
-    # Strip markdown code fences if model wraps in them
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
     parsed = json.loads(raw.strip())
 
-    queries     = parsed.get("queries", [])
-    rag_queries = parsed.get("rag_queries", [])
+    proposed_queries     = parsed.get("queries", [])
+    proposed_rag_queries = parsed.get("rag_queries", [])
 
-    print(f"  Web queries ({len(queries)}):")
-    for q in queries:
-        print(f"    → {q}")
-    if rag_queries:
-        print(f"  RAG queries ({len(rag_queries)}):")
-        for q in rag_queries:
-            print(f"    → {q}")
+    print(f"\n  Proposed web queries ({len(proposed_queries)}):")
+    for i, q in enumerate(proposed_queries, 1):
+        print(f"    {i}. {q}")
+    if proposed_rag_queries:
+        print(f"  Proposed RAG queries ({len(proposed_rag_queries)}):")
+        for i, q in enumerate(proposed_rag_queries, 1):
+            print(f"    {i}. {q}")
+
+    # ── Step 2: interrupt() — pause for human approval ───────────
+    # The graph is now PAUSED. Execution resumes only when the caller
+    # calls app.invoke(Command(resume=...)) with the approved queries.
+    #
+    # interrupt() returns whatever value the human sends back.
+    # If they approve as-is, we send back the original queries.
+    # If they edit, we use their version.
+    #
+    # interrupt() value surfaced to the caller:
+    human_input = interrupt({
+        "message":       "Review and approve the proposed search queries",
+        "queries":       proposed_queries,
+        "rag_queries":   proposed_rag_queries,
+        "topic":         state["topic"],
+        "instructions":  (
+            "Call app.invoke(Command(resume=approved_queries), config) to continue.\n"
+            "approved_queries = {'queries': [...], 'rag_queries': [...]}"
+        ),
+    })
+
+    # ── Step 3: Resume with approved/edited queries ───────────────
+    # human_input is whatever was passed to Command(resume=...)
+    if isinstance(human_input, dict):
+        final_queries     = human_input.get("queries",     proposed_queries)
+        final_rag_queries = human_input.get("rag_queries", proposed_rag_queries)
+    else:
+        # Human passed None or just approved — use originals
+        final_queries     = proposed_queries
+        final_rag_queries = proposed_rag_queries
+
+    print(f"\n  ✅ Queries approved. Running {len(final_queries)} web + "
+          f"{len(final_rag_queries)} RAG queries.")
 
     return {
-        "queries":         queries,
-        "rag_queries":     rag_queries,
+        "queries":         final_queries,
+        "rag_queries":     final_rag_queries,
         "iteration_count": 0,
         "max_iterations":  int(os.getenv("MAX_ITERATIONS", 3)),
     }

@@ -5,12 +5,8 @@ from src.nodes.planner    import planner_node
 from src.nodes.researcher import researcher_node
 from src.nodes.validator  import validator_node
 from src.nodes.analyst    import analyst_node
-from src.nodes.report_gen import report_node        # ← REAL (Day 9)
-
-
-def notifier_node(state: AgentState) -> dict:
-    print(f"\n[NOTIFIER] 🚀 Stub — skipping (Week 4)")
-    return {"delivery_results": [], "delivery_status": "skipped"}
+from src.nodes.report_gen import report_node
+from src.nodes.notifier   import notifier_node      # ← REAL (Week 4)
 
 
 def should_continue(state: AgentState) -> str:
