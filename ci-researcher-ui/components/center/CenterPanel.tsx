@@ -2,9 +2,8 @@
 import { useAgentStore } from '@/store/agentStore'
 import type { ReportTemplate } from '@/store/agentStore'
 import TopicInput    from '@/components/center/TopicInput'
-import ReportPanel   from '@/components/right/ReportPanel'
+import ReportPanel   from '@/components/center/ReportPanel'
 import HitlCard      from '@/components/center/HitlCard'
-import DiffView from '@/components/center/DiffView'
 
 interface CenterPanelProps {
   onRun: () => void
@@ -39,7 +38,7 @@ function getStep(percent: number): { icon: string; step: string; sub: string } {
 
 export default function CenterPanel({ onRun }: CenterPanelProps) {
   const { phase, progress, reportMd, hitlData, setTopic,
-          reportTemplate, setReportTemplate, diffMode } = useAgentStore()
+          reportTemplate } = useAgentStore()
 
   const isIdle    = phase === 'idle'
   const isRunning = phase === 'running'
@@ -49,72 +48,18 @@ export default function CenterPanel({ onRun }: CenterPanelProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100%' }}>
 
-      {/* Input area */}
+      {/* Input area — fixed, never grows */}
       <div style={{
         padding: '20px 28px 16px',
         borderBottom: '1px solid var(--border)',
-        background: 'var(--surface)', flexShrink: 0,
+        background: 'var(--surface)',
+        flexShrink: 0,
+        // overflow visible so the absolute filter dropdown can escape this box
+        overflow: 'visible',
+        position: 'relative',
+        zIndex: 10,
       }}>
         <TopicInput onRun={onRun} />
-
-        {/* Template picker — sits below input, hidden while running */}
-        {!isRunning && !isHitl && (
-          <div style={{ maxWidth: 720, margin: '10px auto 0' }}>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-            }}>
-              <span style={{
-                fontSize: 10, fontWeight: 700, color: 'var(--text3)',
-                textTransform: 'uppercase', letterSpacing: '.6px',
-                flexShrink: 0,
-              }}>
-                Output:
-              </span>
-              <div style={{ display: 'flex', gap: 5 }}>
-                {TEMPLATES.map((t) => {
-                  const active = reportTemplate === t.id
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() => setReportTemplate(t.id)}
-                      title={t.sub}
-                      style={{
-                        padding: '4px 11px', borderRadius: 20,
-                        fontSize: 11, fontWeight: 600,
-                        cursor: 'pointer',
-                        border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}`,
-                        background: active ? 'rgba(91,127,255,.12)' : 'transparent',
-                        color: active ? 'var(--accent)' : 'var(--text3)',
-                        transition: 'all .15s',
-                        display: 'flex', alignItems: 'center', gap: 5,
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!active) {
-                          e.currentTarget.style.borderColor = 'var(--accent)'
-                          e.currentTarget.style.color = 'var(--text2)'
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!active) {
-                          e.currentTarget.style.borderColor = 'var(--border2)'
-                          e.currentTarget.style.color = 'var(--text3)'
-                        }
-                      }}
-                    >
-                      <span>{t.icon}</span>
-                      {t.label}
-                    </button>
-                  )
-                })}
-              </div>
-
-              {/* Active template description */}
-              <span style={{ fontSize: 10, color: 'var(--text3)', marginLeft: 4 }}>
-                — {TEMPLATES.find((t) => t.id === reportTemplate)?.sub}
-              </span>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Progress bar */}
@@ -317,15 +262,8 @@ export default function CenterPanel({ onRun }: CenterPanelProps) {
           </div>
         )}
 
-        {/* Diff view */}
-        {diffMode && (
-          <div style={{ maxWidth: 900, margin: '0 auto' }}>
-            <DiffView />
-          </div>
-        )}
-
         {/* Report */}
-        {reportMd && !diffMode && (
+        {reportMd && (
           <div style={{ maxWidth: 760, margin: '0 auto' }}>
             <ReportPanel />
           </div>

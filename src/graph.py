@@ -1,12 +1,15 @@
+from langchain.chat_models import init_chat_model
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import InMemorySaver
+
+from src.config import GraphConfig
 from src.state import AgentState
-from src.nodes.planner    import planner_node
+from src.nodes.planner    import make_planner_node
 from src.nodes.researcher import researcher_node
-from src.nodes.validator  import validator_node
-from src.nodes.analyst    import analyst_node
-from src.nodes.report_gen import report_node
-from src.nodes.notifier   import notifier_node      # ← REAL (Week 4)
+from src.nodes.validator  import make_validator_node
+from src.nodes.analyst    import make_analyst_node
+from src.nodes.report_gen import make_report_node
+from src.nodes.notifier   import notifier_node
 
 
 def should_continue(state: AgentState) -> str:
@@ -20,13 +23,20 @@ def should_continue(state: AgentState) -> str:
     return "generate_report"
 
 
-def build_graph(checkpointer=None):
+def build_graph(config: GraphConfig = None, checkpointer=None):
+    config = config or GraphConfig.from_env()
+
+    planner_llm   = init_chat_model(model=config.planner.model,    model_provider="openai", temperature=config.planner.temperature,    api_key=config.planner.api_key)
+    validator_llm = init_chat_model(model=config.validator.model,  model_provider="openai", temperature=config.validator.temperature,  api_key=config.validator.api_key)
+    analyst_llm   = init_chat_model(model=config.analyst.model,    model_provider="openai", temperature=config.analyst.temperature,    api_key=config.analyst.api_key)
+    report_llm    = init_chat_model(model=config.report_gen.model, model_provider="openai", temperature=config.report_gen.temperature, api_key=config.report_gen.api_key)
+
     workflow = StateGraph(AgentState)
-    workflow.add_node("planner",         planner_node)
+    workflow.add_node("planner",         make_planner_node(planner_llm))
     workflow.add_node("researcher",      researcher_node)
-    workflow.add_node("validator",       validator_node)
-    workflow.add_node("analyst",         analyst_node)
-    workflow.add_node("generate_report", report_node)
+    workflow.add_node("validator",       make_validator_node(validator_llm))
+    workflow.add_node("analyst",         make_analyst_node(analyst_llm))
+    workflow.add_node("generate_report", make_report_node(report_llm))
     workflow.add_node("notifier",        notifier_node)
 
     workflow.set_entry_point("planner")
@@ -40,5 +50,6 @@ def build_graph(checkpointer=None):
         "analyst", should_continue,
         {"researcher": "researcher", "generate_report": "generate_report"}
     )
+
     checkpointer = checkpointer or InMemorySaver()
     return workflow.compile(checkpointer=checkpointer)

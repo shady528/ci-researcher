@@ -1,8 +1,7 @@
 """
-internal_rag.py — ChromaDB retrieval tool
+internal_rag.py — Session-scoped ChromaDB retrieval
 
-Used by the Researcher node when source_mode is "internal" or "hybrid".
-Takes a natural language query, returns the most relevant internal doc chunks.
+Filters by session_id so each run only searches its own uploaded documents.
 """
 
 import os
@@ -23,21 +22,20 @@ EMBEDDING_FN = OpenAIEmbeddingFunction(
 
 
 def query_internal_docs(
-    query: str,
-    top_k: int = 5,
-    file_ids: list[str] | None = None,
+    query:      str,
+    session_id: str,
+    top_k:      int = 5,
 ) -> list[dict]:
     """
-    Semantic search over ingested internal documents.
+    Semantic search over documents uploaded in this session only.
 
     Args:
-        query:    Natural language question to search for
-        top_k:   Number of chunks to return
-        file_ids: Optional — filter to specific uploaded files only
+        query:      Natural language question
+        session_id: Filters to only this session's chunks
+        top_k:      Number of chunks to return
 
     Returns:
-        List of dicts matching SourceDoc schema (without credibility scores,
-        those are filled in by the Validator node).
+        List of dicts matching SourceDoc schema
     """
     try:
         collection = _client.get_collection(
@@ -45,29 +43,26 @@ def query_internal_docs(
             embedding_function=EMBEDDING_FN,
         )
     except Exception:
-        print(f"    ⚠️  ChromaDB collection not found — no internal docs ingested yet")
+        print(f"    ⚠️  ChromaDB collection not found")
         return []
 
-    # Build where filter if file_ids provided
-    where = None
-    if file_ids:
-        if len(file_ids) == 1:
-            where = {"file_id": file_ids[0]}
-        else:
-            where = {"file_id": {"$in": file_ids}}
+    total_in_session = collection.count()
+    if total_in_session == 0:
+        print(f"    ⚠️  ChromaDB collection is empty")
+        return []
 
     try:
         results = collection.query(
             query_texts=[query],
             n_results=min(top_k, collection.count()),
-            where=where,
+            where={"session_id": session_id},   # ← session-scoped
             include=["documents", "metadatas", "distances"],
         )
     except Exception as e:
         print(f"    ⚠️  ChromaDB query failed: {e}")
         return []
 
-    docs = []
+    docs      = []
     documents = results.get("documents", [[]])[0]
     metadatas = results.get("metadatas", [[]])[0]
     distances = results.get("distances", [[]])[0]
@@ -76,26 +71,22 @@ def query_internal_docs(
         if not text or not text.strip():
             continue
 
-        # Convert cosine distance → similarity score (0–1)
-        # ChromaDB cosine distance: 0 = identical, 2 = opposite
         similarity = max(0.0, 1.0 - (distance / 2.0))
-
         filename   = meta.get("filename", "unknown")
         page       = meta.get("page", 1)
         chunk_idx  = meta.get("chunk_idx", 0)
 
         docs.append({
-            "url_or_filename":  f"{filename} (p.{page}, chunk {chunk_idx})",
-            "content":          text[:2000],
-            "source_type":      "internal_doc",
-            "credibility_score": 1.0,      # internal docs always trusted
-            "recency_score":    0.85,       # assume moderately recent
-            "is_internal":      True,
-            "published_date":   None,
-            # Extra metadata for audit trail
-            "_similarity":      round(similarity, 3),
-            "_filename":        filename,
-            "_page":            page,
+            "url_or_filename":   f"{filename} (p.{page}, chunk {chunk_idx})",
+            "content":           text[:2000],
+            "source_type":       "internal_doc",
+            "credibility_score": 1.0,
+            "recency_score":     0.85,
+            "is_internal":       True,
+            "published_date":    None,
+            "_similarity":       round(similarity, 3),
+            "_filename":         filename,
+            "_page":             page,
         })
 
     return docs

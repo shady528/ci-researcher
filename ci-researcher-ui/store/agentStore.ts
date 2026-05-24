@@ -54,6 +54,7 @@ interface AgentStore {
 
   phase:    RunPhase
   threadId: string | null
+  sessionId: string | null
 
   nodeStates:   NodeStates
   nodeBadges:   NodeBadges
@@ -65,13 +66,11 @@ interface AgentStore {
 
   progress: ProgressState
 
-  activeTab:       'stream' | 'state' | 'cred' | 'delivery'
+  activeTab:       'stream' | 'cred' | 'delivery'
   stateSnapshot:   AgentStateSnapshot | null
   scoredDocs:      ScoredDoc[]
   reportMd:        string
   deliveryResults: DeliveryResult[]
-  diffMode:        boolean
-  diffReportIds:   [number, number] | null
 
   leftCollapsed: boolean
   setLeftCollapsed: (v: boolean) => void
@@ -108,13 +107,11 @@ interface AgentStore {
   addThought:         (t: ThoughtCardData) => void
   setHitlData:        (d: HitlData | null) => void
   setProgress:        (label: string, percent: number, visible?: boolean) => void
-  setActiveTab:       (tab: 'stream' | 'state' | 'cred' | 'delivery') => void
+  setActiveTab:       (tab: 'stream' | 'cred' | 'delivery') => void
   setStateSnapshot:   (s: AgentStateSnapshot) => void
   setScoredDocs:      (docs: ScoredDoc[]) => void
   setReportMd:        (md: string) => void
   setDeliveryResults: (r: DeliveryResult[]) => void
-  setDiffMode:        (v: boolean) => void
-  setDiffReportIds:   (ids: [number, number] | null) => void
   setShowCondEdge:    (v: boolean) => void
   setIterText:        (t: string) => void
   setWebDocs:         (n: number) => void
@@ -126,7 +123,9 @@ interface AgentStore {
   setTopic:           (t: string) => void
   setSourceMode:      (m: SourceMode) => void
   setUploadedFiles:   (f: UploadedFile[]) => void
+  setSessionId:       (id: string | null) => void
   setDelivery:        (d: Partial<DeliveryConfig>) => void
+  setThreadId: (id: string | null) => void
   reset:              () => void
 }
 
@@ -136,6 +135,7 @@ export const useAgentStore = create<AgentStore>((set) => ({
 
   phase:        'idle',
   threadId:     null,
+  sessionId:    null,
   nodeStates:   { ...defaultNodeStates },
   nodeBadges:   { ...defaultNodeBadges },
   showCondEdge: false,
@@ -149,8 +149,6 @@ export const useAgentStore = create<AgentStore>((set) => ({
   scoredDocs:      [],
   reportMd:        '',
   deliveryResults: [],
-  diffMode:        false,
-  diffReportIds:   null,
 
   leftCollapsed:    false,
   setLeftCollapsed: (v) => set({ leftCollapsed: v }),
@@ -205,8 +203,6 @@ export const useAgentStore = create<AgentStore>((set) => ({
   setScoredDocs:      (docs)       => set({ scoredDocs: docs }),
   setReportMd:        (md)         => set({ reportMd: md }),
   setDeliveryResults: (r)          => set({ deliveryResults: r }),
-  setDiffMode:        (v)          => set({ diffMode: v }),
-  setDiffReportIds:   (ids)        => set({ diffReportIds: ids }),
   setShowCondEdge:    (v)          => set({ showCondEdge: v }),
   setIterText:        (t)          => set({ iterText: t }),
   setWebDocs:         (n)          => set({ webDocs: n }),
@@ -218,6 +214,8 @@ export const useAgentStore = create<AgentStore>((set) => ({
   setTopic:           (t)          => set({ topic: t }),
   setSourceMode:      (m)          => set({ sourceMode: m }),
   setUploadedFiles:   (f)          => set({ uploadedFiles: f }),
+  setSessionId:       (id)         => set({ sessionId: id }),
+  setThreadId: (id) => set({ threadId: id }),
   setDelivery:        (d)          => set((s) => ({ delivery: { ...s.delivery, ...d } })),
 
   setModelConfig: (c) => set((s) => ({ modelConfig: { ...s.modelConfig, ...c } })),
@@ -248,14 +246,13 @@ export const useAgentStore = create<AgentStore>((set) => ({
     scoredDocs:      [],
     reportMd:        '',
     deliveryResults: [],
-    diffMode:        false,
-    diffReportIds:   null,
     webDocs:         0,
     intDocs:         0,
     avgCred:         '—',
     gapStat:         '0/0',
     elapsed:         '—',
     isRunning:       false,
+    sessionId:       null,
     focus:           '',
     domainAllow:     [],
     domainBlock:     [],

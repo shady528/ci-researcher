@@ -1,18 +1,5 @@
-import os
-from dotenv import load_dotenv
-from langchain.chat_models import init_chat_model
 from langchain_core.messages import SystemMessage, HumanMessage
 from src.state import AgentState
-
-load_dotenv()
-
-# ── GPT-4o for synthesis ─────────────────────────────────────────
-report_llm = init_chat_model(
-    model="gpt-4o",
-    model_provider="openai",
-    temperature=0.2,
-    api_key=os.getenv("OPENAI_API_KEY"),
-)
 
 REPORT_SYSTEM = """You are a senior competitive intelligence analyst writing a professional report.
 
@@ -76,10 +63,6 @@ Write the full report now."""
 
 
 def _build_docs_text(scored_docs: list, max_docs: int = 25) -> str:
-    """
-    Build a detailed docs block for the synthesis prompt.
-    Uses top docs by credibility — these are the most trustworthy sources.
-    """
     top = sorted(
         scored_docs,
         key=lambda d: d["credibility_score"],
@@ -99,36 +82,39 @@ def _build_docs_text(scored_docs: list, max_docs: int = 25) -> str:
     return "\n".join(blocks)
 
 
-def report_node(state: AgentState) -> dict:
-    scored_docs = state.get("scored_docs", [])
-    avg_cred    = state.get("avg_credibility", 0.0)
-    iterations  = state.get("iteration_count", 0)
+def make_report_node(llm):
+    def report_node(state: AgentState) -> dict:
+        scored_docs = state.get("scored_docs", [])
+        avg_cred    = state.get("avg_credibility", 0.0)
+        iterations  = state.get("iteration_count", 0)
 
-    print(f"\n[REPORT] 📊 Synthesizing {len(scored_docs)} docs into report")
-    print(f"  Avg credibility : {avg_cred:.2f}")
-    print(f"  Iterations ran  : {iterations}")
-    print(f"  Sending top 25 sources to GPT-4o for synthesis…")
+        print(f"\n[REPORT] 📊 Synthesizing {len(scored_docs)} docs into report")
+        print(f"  Avg credibility : {avg_cred:.2f}")
+        print(f"  Iterations ran  : {iterations}")
+        print(f"  Sending top 25 sources to GPT-4o for synthesis…")
 
-    docs_text = _build_docs_text(scored_docs, max_docs=25)
+        docs_text = _build_docs_text(scored_docs, max_docs=25)
 
-    messages = [
-        SystemMessage(content=REPORT_SYSTEM),
-        HumanMessage(content=REPORT_HUMAN.format(
-            topic=state["topic"],
-            avg_cred=avg_cred,
-            doc_count=len(scored_docs),
-            iterations=iterations,
-            top_n=min(25, len(scored_docs)),
-            docs_text=docs_text,
-        ))
-    ]
+        messages = [
+            SystemMessage(content=REPORT_SYSTEM),
+            HumanMessage(content=REPORT_HUMAN.format(
+                topic=state["topic"],
+                avg_cred=avg_cred,
+                doc_count=len(scored_docs),
+                iterations=iterations,
+                top_n=min(25, len(scored_docs)),
+                docs_text=docs_text,
+            ))
+        ]
 
-    response  = report_llm.invoke(messages)
-    report_md = response.content.strip()
+        response  = llm.invoke(messages)
+        report_md = response.content.strip()
 
-    print(f"  ✅ Report generated ({len(report_md)} characters)")
+        print(f"  ✅ Report generated ({len(report_md)} characters)")
 
-    return {
-        "report":            report_md,
-        "report_confidence": avg_cred,
-    }
+        return {
+            "report":            report_md,
+            "report_confidence": avg_cred,
+        }
+
+    return report_node

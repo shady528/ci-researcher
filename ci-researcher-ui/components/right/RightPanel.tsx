@@ -1,13 +1,11 @@
 'use client'
 import { useAgentStore } from '@/store/agentStore'
 import ThoughtStream   from '@/components/right/ThoughtStream'
-import StateViewer     from './StateViewer'
 import CredibilityPanel from './CredibilityPanel'
 import DeliveryPanel   from './DeliveryPanel'
 
 const TABS = [
   { id: 'stream',   label: '💭 Live Log'    },
-  { id: 'state',    label: '{ } State'      },
   { id: 'cred',     label: '🛡 Sources'     },
   { id: 'delivery', label: '📬 Delivery'    },
 ] as const
@@ -70,7 +68,6 @@ export default function RightPanel() {
         borderLeft: '1px solid var(--border)',
       }}>
         {activeTab === 'stream'   && <ThoughtStream />}
-        {activeTab === 'state'    && <StateViewer />}
         {activeTab === 'cred'     && <CredibilityPanel />}
         {activeTab === 'delivery' && <DeliveryPanel />}
       </div>

@@ -15,9 +15,10 @@ const PILLS = [
 interface TopNavProps {
   onRun:   () => void
   onReset: () => void
+  mobile?: boolean
 }
 
-export default function TopNav({ onRun, onReset }: TopNavProps) {
+export default function TopNav({ onRun, onReset, mobile }: TopNavProps) {
   const phase       = useAgentStore((s) => s.phase)
   const theme       = useAgentStore((s) => s.theme)
   const setTheme    = useAgentStore((s) => s.setTheme)
@@ -69,46 +70,37 @@ export default function TopNav({ onRun, onReset }: TopNavProps) {
         <span style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 400, marginLeft: 2 }}>v2</span>
       </div>
 
-      {/* Pills — writer model updates dynamically */}
-      <div style={{ display: 'flex', gap: 6 }}>
-        {[
-          { label: 'LangGraph',          accent: true  },
-          { label: writerModel,          accent: true  },
-          { label: 'Tavily',             accent: true  },
-          { label: 'RAG',                green: true   },
-          { label: 'Credibility Engine', green: true   },
-          { label: 'Auto-Delivery',      green: true   },
-        ].map((p) => (
-          <span key={p.label} style={{
-            fontSize: 10, fontWeight: 600, padding: '3px 9px', borderRadius: 20,
-            border: `1px solid ${p.green ? 'var(--green)' : 'var(--accent)'}`,
-            color:  p.green ? 'var(--green)' : 'var(--accent)',
-            background: p.green ? 'rgba(31,207,114,.07)' : 'rgba(91,127,255,.08)',
-          }}>
-            {p.label}
-          </span>
-        ))}
-      </div>
+      {/* Pills — hidden on mobile */}
+      {!mobile && (
+        <div style={{ display: 'flex', gap: 6 }}>
+          {[
+            { label: 'LangGraph',          accent: true  },
+            { label: writerModel,          accent: true  },
+            { label: 'Tavily',             accent: true  },
+            { label: 'RAG',                green: true   },
+            { label: 'Credibility Engine', green: true   },
+            { label: 'Auto-Delivery',      green: true   },
+          ].map((p) => (
+            <span key={p.label} style={{
+              fontSize: 10, fontWeight: 600, padding: '3px 9px', borderRadius: 20,
+              border: `1px solid ${p.green ? 'var(--green)' : 'var(--accent)'}`,
+              color:  p.green ? 'var(--green)' : 'var(--accent)',
+              background: p.green ? 'rgba(31,207,114,.07)' : 'rgba(91,127,255,.08)',
+            }}>
+              {p.label}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Actions */}
       <div style={{ display: 'flex', gap: 7, alignItems: 'center' }}>
-
-        <IconBtn
-          title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-          onClick={() => setTheme(isDark ? 'light' : 'dark')}
-        >
+        <IconBtn title={isDark ? 'Light' : 'Dark'} onClick={() => setTheme(isDark ? 'light' : 'dark')}>
           {isDark ? '☀️' : '🌙'}
         </IconBtn>
 
-        {/* Settings gear — now with tabs */}
         <div ref={gearRef} style={{ position: 'relative' }}>
-          <IconBtn
-            title="Settings"
-            onClick={() => setGearOpen((v) => !v)}
-            active={gearOpen}
-          >
-            ⚙
-          </IconBtn>
+          <IconBtn title="Settings" onClick={() => setGearOpen((v) => !v)} active={gearOpen}>⚙</IconBtn>
 
           {gearOpen && (
             <div style={{
@@ -193,10 +185,16 @@ export default function TopNav({ onRun, onReset }: TopNavProps) {
           )}
         </div>
 
-        <div style={{ width: 1, height: 20, background: 'var(--border2)', margin: '0 2px' }} />
-
-        <Btn label="↺ Reset"  onClick={onReset} disabled={busy} />
-        <Btn label="⬇ Export" onClick={() => {}} />
+        {!mobile && (
+          <>
+            <div style={{ width: 1, height: 20, background: 'var(--border2)', margin: '0 2px' }} />
+            <Btn label="↺ Reset"  onClick={onReset} disabled={busy} />
+            <Btn label="⬇ Export" onClick={() => {}} />
+          </>
+        )}
+        {mobile && (
+          <Btn label="↺" onClick={onReset} disabled={busy} />
+        )}
       </div>
     </nav>
   )

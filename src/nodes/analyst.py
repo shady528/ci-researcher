@@ -1,22 +1,7 @@
 import os
 import json
-from dotenv import load_dotenv
-from langchain.chat_models import init_chat_model
 from langchain_core.messages import SystemMessage, HumanMessage
 from src.state import AgentState, Gap
-
-load_dotenv()
-
-# ── GPT-4o for reasoning — this needs the full model ─────────────
-# The Analyst is doing multi-step reasoning: reading 25 docs,
-# understanding the research goal, identifying what's missing,
-# and forming targeted follow-up queries. Do NOT use 4o-mini here.
-analyst_llm = init_chat_model(
-    model="gpt-4o",
-    model_provider="openai",
-    temperature=0.1,
-    api_key=os.getenv("OPENAI_API_KEY"),
-)
 
 ANALYST_SYSTEM = """You are a senior competitive intelligence analyst with a critical eye.
 
@@ -67,11 +52,6 @@ Evaluate completeness now."""
 
 
 def _build_docs_summary(scored_docs: list, max_docs: int = 20) -> str:
-    """
-    Build a compact summary of docs for the prompt.
-    We cap at max_docs to stay within context limits.
-    Sort by credibility so the best sources appear first.
-    """
     sorted_docs = sorted(
         scored_docs,
         key=lambda d: d["credibility_score"],
@@ -88,78 +68,77 @@ def _build_docs_summary(scored_docs: list, max_docs: int = 20) -> str:
     return "\n".join(lines)
 
 
-def analyst_node(state: AgentState) -> dict:
-    scored_docs  = state.get("scored_docs", [])
-    iteration    = state["iteration_count"]
-    max_iter     = state["max_iterations"]
-    avg_cred     = state.get("avg_credibility", 0.0)
+def make_analyst_node(llm):
+    def analyst_node(state: AgentState) -> dict:
+        scored_docs  = state.get("scored_docs", [])
+        iteration    = state["iteration_count"]
+        max_iter     = state["max_iterations"]
+        avg_cred     = state.get("avg_credibility", 0.0)
 
-    print(f"\n[ANALYST] 🧠 Evaluating {len(scored_docs)} scored docs | "
-          f"Iteration {iteration}/{max_iter} | Avg cred: {avg_cred:.2f}")
+        print(f"\n[ANALYST] 🧠 Evaluating {len(scored_docs)} scored docs | "
+              f"Iteration {iteration}/{max_iter} | Avg cred: {avg_cred:.2f}")
 
-    if not scored_docs:
-        print("  ⚠️  No scored docs — forcing INSUFFICIENT")
+        if not scored_docs:
+            print("  ⚠️  No scored docs — forcing INSUFFICIENT")
+            return {
+                "gaps": [{
+                    "description": "No documents were collected",
+                    "suggested_query": state["topic"] + " detailed overview 2025",
+                    "resolved": False,
+                }],
+                "analyst_verdict": "INSUFFICIENT",
+                "iteration_count": iteration + 1,
+            }
+
+        docs_summary = _build_docs_summary(scored_docs)
+
+        messages = [
+            SystemMessage(content=ANALYST_SYSTEM),
+            HumanMessage(content=ANALYST_HUMAN.format(
+                topic=state["topic"],
+                iteration=iteration,
+                max_iterations=max_iter,
+                doc_count=len(scored_docs),
+                avg_cred=avg_cred,
+                docs_summary=docs_summary,
+            ))
+        ]
+
+        response = llm.invoke(messages)
+        raw = response.content.strip()
+
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+
+        parsed    = json.loads(raw.strip())
+        verdict   = parsed.get("verdict", "SUFFICIENT")
+        reasoning = parsed.get("reasoning", "")
+        raw_gaps  = parsed.get("gaps", [])
+
+        gaps: list[Gap] = [
+            {
+                "description":     g["description"],
+                "suggested_query": g["suggested_query"],
+                "resolved":        False,
+            }
+            for g in raw_gaps
+        ]
+
+        print(f"\n  Verdict: {'✅ SUFFICIENT' if verdict == 'SUFFICIENT' else '⚠️  INSUFFICIENT'}")
+        print(f"  Reasoning: {reasoning}")
+
+        if gaps:
+            print(f"\n  Gaps found ({len(gaps)}):")
+            for g in gaps:
+                print(f"    🔍 {g['description']}")
+                print(f"       Query: {g['suggested_query']}")
+
         return {
-            "gaps": [{
-                "description": "No documents were collected",
-                "suggested_query": state["topic"] + " detailed overview 2025",
-                "resolved": False,
-            }],
-            "analyst_verdict": "INSUFFICIENT",
-            "iteration_count": iteration + 1,
+            "gaps":             gaps,
+            "analyst_verdict":  verdict,
+            "iteration_count":  iteration + 1,
         }
 
-    # Build the prompt
-    docs_summary = _build_docs_summary(scored_docs)
-
-    messages = [
-        SystemMessage(content=ANALYST_SYSTEM),
-        HumanMessage(content=ANALYST_HUMAN.format(
-            topic=state["topic"],
-            iteration=iteration,
-            max_iterations=max_iter,
-            doc_count=len(scored_docs),
-            avg_cred=avg_cred,
-            docs_summary=docs_summary,
-        ))
-    ]
-
-    response = analyst_llm.invoke(messages)
-    raw = response.content.strip()
-
-    # Strip markdown fences if present
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-
-    parsed    = json.loads(raw.strip())
-    verdict   = parsed.get("verdict", "SUFFICIENT")
-    reasoning = parsed.get("reasoning", "")
-    raw_gaps  = parsed.get("gaps", [])
-
-    # Convert to Gap TypedDict format
-    gaps: list[Gap] = [
-        {
-            "description":     g["description"],
-            "suggested_query": g["suggested_query"],
-            "resolved":        False,
-        }
-        for g in raw_gaps
-    ]
-
-    # Print analyst reasoning
-    print(f"\n  Verdict: {'✅ SUFFICIENT' if verdict == 'SUFFICIENT' else '⚠️  INSUFFICIENT'}")
-    print(f"  Reasoning: {reasoning}")
-
-    if gaps:
-        print(f"\n  Gaps found ({len(gaps)}):")
-        for g in gaps:
-            print(f"    🔍 {g['description']}")
-            print(f"       Query: {g['suggested_query']}")
-
-    return {
-        "gaps":             gaps,
-        "analyst_verdict":  verdict,
-        "iteration_count":  iteration + 1,
-    }
+    return analyst_node
